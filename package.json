@@ -1,0 +1,29 @@
+{
+    "name": "keepr",
+    "version": "0.0.0",
+    "description": "The simple file caching module for Node.js. Caches files up to a given byte size, keeping the most frequently files used in memory and purging others.",
+    "author": "Jason James Pollman <jasonjpollman@gmail.com>",
+    "license": "MIT",
+    "main": "index.js",
+    "scripts": {
+        "test": "mocha"
+    },
+    "keywords": [
+        "cache",
+        "file system",
+        "fs",
+        "keepr",
+        "memory",
+        "performance"
+    ],
+    "devDependenices": {
+        "chai": "^3.5.0",
+        "mocha": "^2.4.5"
+    },
+    "dependencies": {
+        "proto-lib": "^0.2.7"
+    },
+    "devDependencies": {
+        "chai": "^3.5.0"
+    }
+}
