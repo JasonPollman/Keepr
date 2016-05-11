@@ -1,14 +1,13 @@
 'use strict';
 
-var crypto  = require('crypto'),
-    path    = require('path'),
-    lib     = require('proto-lib').get('_'),
-    v8      = require('v8'),
-    fs      = require('fs'),
-    os      = require('os'),
+var path = require('path'),
+    lib  = require('proto-lib').get('_'),
+    v8   = require('v8'),
+    fs   = require('fs'),
+    os   = require('os'),
+
     OS_TYPE = os.platform(),
     HOME    = os.homedir(),
-
 
     readFile     = fs.readFile,
     readFileSync = fs.readFileSync,
@@ -18,7 +17,7 @@ var crypto  = require('crypto'),
      * value is missing or invalid.
      * @type {Number}
      */
-    DEFAULT_SIZE_PERCENTAGE_MULTIPLIER = 0.25;
+    DEFAULT_SIZE_PERCENTAGE_MULTIPLIER = 0.75;
 
 /**
  * Replaces ~ or %HOME% with the user's home directory.
@@ -58,7 +57,7 @@ function Keepr (options) {
      * Default is 1 GB.
      * @type {}
      */
-    cacheLimitSize = 0,
+    cacheLimitSize = v8.getHeapStatistics().total_available_size * DEFAULT_SIZE_PERCENTAGE_MULTIPLIER,
 
     /**
      * If true, debugging messages will be output to the stdout.
@@ -88,12 +87,6 @@ function Keepr (options) {
     historyFactor = 2,
 
     /**
-     * If set, all paths will be relative to the given path prefix.
-     * @type {String=}
-     */
-    relativeTo = null,
-
-    /**
      * A self reference to the current Keepr object.
      * @type {Keepr}
      */
@@ -110,32 +103,6 @@ function Keepr (options) {
     }
 
     /**
-     * Attempts to convert the buffer to the requested encoding without throwing if the encoding doesn't exist.
-     * @param {Buffer} buffer The buffer to convert.
-     * @param {String} encoding The encoding to convert the buffer to.
-     * @param {Array<Number>} start The process.hrtime results from the beginning of the read call.
-     * @param {Function} done A callback for completion.
-     * @return {undefined}
-     */
-    function getBufferWithEncodingAndInvoke (buffer, encoding, start, done) {
-        var res;
-        try {
-            if(encoding === 'json') {
-                res = JSON.parse(buffer.toString('utf-8'));
-            }
-            else {
-                res = encoding === 'buffer' ? new Buffer(buffer) : buffer.toString(encoding);
-            }
-            done.call(self, null, res, process.hrtime(start));
-            return res;
-        }
-        catch (e) {
-            done.call(self, e, null, process.hrtime(start));
-            return e;
-        }
-    }
-
-    /**
      * Invoked by fs.readFile when a file load is complete. All callbacks subscribed to the file will then
      * be invoked in the order they were requested.
      * @param {Error|null} err An error that occured loading the file, if one existed.
@@ -143,49 +110,72 @@ function Keepr (options) {
      * @param {Buffer} buffer The buffer results from fs.readFile.
      * @return {undefined}
      */
-    function onFileLoaded (err, filename, hash, buffer) {
-        var loadQueue = pendingLoad[hash];
-        pendingLoad[hash] = undefined;
-        delete pendingLoad[hash];
+    function onFileLoaded (err, fn, hash, buffer) {
+        var loadQueue = pendingLoad[fn];
+
+        pendingLoad[fn] = undefined;
+        delete pendingLoad[fn];
 
         if(!err) {
-            debug('File "' + filename + '" finished loading.');
-            addToCache(filename, hash, buffer);
+            debug('File "' + fn + '" finished loading.');
+            addToCache(fn, fn + ':buffer', 'buffer', buffer);
         }
         else {
-            debug('File "' + filename + '" failed to load: ' + err.message);
+            debug('File "' + fn + '" failed to load: ' + err.message);
         }
 
         if(loadQueue instanceof Array) {
-            debug('Invoking ' + loadQueue.length + ' callback(s) for file "' + path.basename(filename) + '" with hash "' + hash + '".');
-            loadQueue._.every(function (o) {
+            debug('Invoking ' + loadQueue.length + ' callback(s) for file "' + path.basename(fn) + '" with hash "' + hash + '".');
+
+            loadQueue._.every(function (request) {
+                var wasConverted, encoded;
+
                 if(err) {
-                    o.callback.call(self, err, null, process.hrtime(o.start));
+                    request.callback.call(self, err, null, null);
                 }
                 else {
-                    getBufferWithEncodingAndInvoke(buffer, o.encoding, o.start, o.callback);
+                    if(!cache[request.hash]) {
+                        wasConverted = true;
+                        encoded = buffer.toString(request.encoding);
+                        addToCache(fn, request.hash, request.encoding, encoded);
+                    }
+                    else {
+                        encoded = cache[request.hash].data;
+                    }
+
+                    if(request.encoding === 'buffer') {
+                        var copy = new Buffer(self.sizeOf(encoded));
+                        encoded.copy(copy);
+                        encoded = copy;
+                    }
+                    return request.callback.call(self, null, encoded, { time: process.hrtime(request.start), cached: false, converted: wasConverted });
                 }
             });
         }
+
+        return err || buffer;
     }
 
     /**
      * Adds a cache item to the cace.
      * @param {String} filename The filename associated with this buffer contents.
      * @param {String} hash The md5 string used to identify the cache.
-     * @param {Buffer} buffer The buffer contents to store in the cache.
+     * @param {Buffer} data The data contents to store in the cache.
      * @return {undefined}
      */
-    function addCacheLine (filename, hash, buffer) {
-        var sz = self.currentByteSize();
+    function addCacheLine (filename, hash, encoding, data) {
+        var sz = self.currentByteSize(),
+            ds = self.sizeOf(data);
 
-        currentCacheSize += buffer.length;
+        currentCacheSize += ds;
         cache[hash] = {
-            data    : buffer,
-            size    : buffer.length,
-            source  : filename,
-            called  : 0,
-            watcher : !watchForChanges ? null : fs.watch(filename, { persistent: false, }, function () {
+            data     : data,
+            size     : ds,
+            source   : filename,
+            called   : 0,
+            hash     : hash,
+            encoding : encoding,
+            watcher  : !watchForChanges ? null : fs.watch(filename, { persistent: false, }, function () {
                 debug('Detected changes in file "' + filename + '" killing its cache.');
                 cache[hash].watcher.close();
 
@@ -194,17 +184,17 @@ function Keepr (options) {
             })
         };
 
-        debug('Cache re-sized to: ' + buffer.length + ' + ' + sz + ' = ' + (sz + buffer.length) + ' (' + (self.utilized() * 100).toFixed(4) + '% utiliation).');
+        debug('Cache re-sized to: ' + ds + ' + ' + sz + ' = ' + currentCacheSize + ' (' + (self.utilized() * 100).toFixed(4) + '% utiliation).');
     }
 
     /**
      * Removes the oldest / least frequenly used cache item.
      * @return {undefined}
      */
-    function makeRoomForBuffer (buffer) {
-        var lfu, size;
+    function makeRoomForBuffer (data) {
+        var lfu, size, sizeOfData = self.sizeOf(data);
 
-        while(cacheLimitSize < currentCacheSize + buffer.length) {
+        while(cacheLimitSize < currentCacheSize + sizeOfData) {
             lfu = cache._.first(Math.ceil(cache._.size() / historyFactor))
                        ._.keyOfMin(function (line) { return line.called; });
 
@@ -225,20 +215,20 @@ function Keepr (options) {
      * @param {Buffer} buffer The buffer contents to store in the cache.
      * @return {Boolean} True if the file was cached, false otherwise.
      */
-    function addToCache (filename, hash, buffer) {
+    function addToCache (filename, hash, encoding, data) {
         debug('Adding hash "' + hash + '" to cache.');
-        if(!(buffer instanceof Buffer)) return false;
 
-        var hasEnoughHeap = v8.getHeapStatistics().total_available_size > buffer.length;
+        var sizeOfData    = self.sizeOf(data),
+            hasEnoughHeap = v8.getHeapStatistics().total_available_size > sizeOfData;
 
         // Check that the filesize is less than the buffer size. If it's not, don't cache it.
-        if(buffer.length > (cacheLimitSize / historyFactor * 2) || !hasEnoughHeap) {
+        if(sizeOfData > (cacheLimitSize / historyFactor * 2) || !hasEnoughHeap) {
             debug(
                 'File "' + filename + '" is too large to be cached. Skipping...' + os.EOL +
                 '    Cache     : ' + currentCacheSize                    + os.EOL +
                 '    Limit     : ' + cacheLimitSize                      + os.EOL +
                 '    Available : ' + (cacheLimitSize - currentCacheSize) + os.EOL +
-                '    File      : ' + buffer.length
+                '    File      : ' + sizeOfData
             );
             return false;
         }
@@ -246,14 +236,14 @@ function Keepr (options) {
         // Check that we have the heap space to allocate the new cache line
         if(hasEnoughHeap) {
             // Still room for the file contents...
-            if(currentCacheSize + buffer.length < cacheLimitSize) {
-                addCacheLine(filename, hash, buffer);
+            if(currentCacheSize + sizeOfData < cacheLimitSize) {
+                addCacheLine(filename, hash, encoding, data);
             }
             // Not enough room, gotta dump something...
             else {
                 debug('Not enough room in cache, purging lines to make space.');
-                makeRoomForBuffer(buffer);
-                addCacheLine(filename, hash, buffer);
+                makeRoomForBuffer(data);
+                addCacheLine(filename, hash, encoding, data);
             }
         }
         // User needs to re-think their program design...
@@ -298,6 +288,198 @@ function Keepr (options) {
     }
 
     /**
+     * Toggles the file watchers on/off for the cache.
+     * @return {undefined}
+     */
+    function toggleWatchers () {
+        cache._.every(function (c, key, i, cache) {
+            if(watchForChanges === false) {
+                if(c.watcher) {
+                    c.watcher.close();
+                    c.watcher = null;
+                }
+            }
+            else {
+                if(!c.watcher) {
+                    c.watcher = fs.watch(c.source, function () {
+                        debug('Detected changes in file "' + c.source + '" killing its cache.');
+                        c.watcher.close();
+                        cache[key] = undefined;
+                        delete cache[key];
+                    });
+                }
+            }
+        });
+    }
+
+    /**
+     * Sets the maximum size the cache can grow to.
+     * @param {Number|String} bytesOrLimitString The number of bytes, or a string representing a storage size.
+     * Examples: 1000b, 1500kb, 1.5mb, 3gb...
+     * @return {Keepr} The current Keepr instance.
+     */
+    function setCacheLimit (bytesOrLimitString) {
+        // User passed a number, treat it as bytes..
+        if(lib.object.isNumeric(bytesOrLimitString)) {
+            cacheLimitSize = checkLimitSize(parseInt(bytesOrLimitString, 10));
+        }
+        // Got "limit string", parse the string...
+        else if(typeof bytesOrLimitString === 'string') {
+            var m = bytesOrLimitString.toLowerCase().match(/^ *(\d+(?:\.\d+)?) *(b|kb|mb|gb) *$/i);
+
+            if(m) {
+                cacheLimitSize = checkLimitSize(limitStringToBytes(m[1], m[2]));
+            }
+            else {
+                throw new Error('Invalid cache size "' + bytesOrLimitString + '"');
+            }
+        }
+        // Set default limit size...
+        else {
+            cacheLimitSize = v8.getHeapStatistics().total_available_size * DEFAULT_SIZE_PERCENTAGE_MULTIPLIER;
+        }
+
+        if(cacheLimitSize === 0) cacheLimitSize = Number.MAX_VALUE;
+        return self;
+    }
+
+    /**
+     * Reads a file, if cached the cached contents will be returned, otherwise the file will be loaded and cached.
+     * @param {String} filename The path to the file to load.
+     * @param {Function=} done A callback for completion.
+     * @params {Object} options Options passed to fs.readFile
+     * @return {Keepr|Buffer|String} The current Keepr instance, or the file contents is "sync" is true.
+     */
+    function get (sync, filename, options, done) {
+        var start = process.hrtime(),
+            contents,
+            encoding,
+            bufferHash,
+            hash,
+            fn,
+            e;
+
+        done = arguments._.getCallback();
+
+        if(typeof filename !== 'string') {
+            e = new Error('Keepr~get expected argument #0 (get) to be a string, but got ' + typeof filename + '.');
+            if(sync) throw e;
+            return done.call(self, e, null, null);
+        }
+
+        if(typeof options === 'string') options = { encoding: options };
+        options = typeof options === 'object' ? options : {};
+
+        encoding = options.encoding;
+        if(typeof encoding !== 'string') encoding = 'buffer';
+        if(encoding === 'utf8') encoding = 'utf-8';
+        encoding = encoding.toLowerCase();
+
+        switch(encoding) {
+            case 'ascii' :
+            case 'base64':
+            case 'binary':
+            case 'hex'   :
+            case 'utf-8' :
+            case 'buffer':
+                break;
+
+            default:
+                e = new TypeError('Unknown encoding: ' + encoding);
+                if(sync) {
+                    throw e;
+                }
+                else {
+                    return done.call(self, e, null, null);
+                }
+
+        }
+
+        // Remove the encoding so we always a buffer back to cache.
+        delete options.encoding;
+
+        fn         = path.resolve(filename);
+        hash       = fn + ':' + encoding;
+        bufferHash = cache[fn + ':buffer'];
+
+        if(cache[hash]) {
+            debug('Requested file "' + fn + '" present, returning cache for encoding "' + encoding + '".');
+            cache[hash].called++;
+
+            if(sync) {
+                return cache[hash].data;
+            }
+            else {
+                done.call(self, null, cache[hash].data, { time: process.hrtime(start), cached: true, converted: false });
+            }
+        }
+        else if(cache[bufferHash]) {
+            debug('Requested file "' + fn + '" present, converting cache to encoding "' + encoding + '" and returning.');
+            var converted = cache[bufferHash].data.toString(encoding);
+            addToCache(fn, bufferHash, encoding, converted);
+
+            if(sync) {
+                return converted;
+            }
+            else {
+                done.call(self, null, converted, { time: process.hrtime(start), cached: true, converted: true });
+            }
+        }
+        // File doesn't exist in cache, read the file and cache it.
+        else {
+
+            // The file is currently being loaded, push the callback to be executed when it's finished.
+            if(pendingLoad[fn] && sync === false) {
+                debug('Requested file "' + fn + '" waiting for load... pushing callback to completion queue.');
+
+                pendingLoad[fn].push({
+                    filename : filename,
+                    callback : done,
+                    encoding : encoding,
+                    hash     : hash,
+                    start    : start
+                });
+                return self;
+            }
+            // Read the file synchronously
+            else if(sync === true) {
+                debug('Requested file "' + fn + '" not present, reading and caching (synchronously).');
+
+                contents = onFileLoaded(null, fn, hash, readFileSync(fn, options));
+
+                if(encoding !== 'buffer') {
+                    var encoded = contents.toString(encoding);
+                    addToCache(fn, hash, encoding, encoded);
+                    return encoded;
+                }
+                else {
+                    var copy = new Buffer(self.sizeOf(contents));
+                    contents.copy(copy);
+                    return copy;
+                }
+            }
+            // Read the file aynchronously
+            else {
+                debug('Requested file "' + fn + '" not present, reading and caching (asynchronously).');
+                pendingLoad[fn] = [
+                    {
+                        filename : filename,
+                        callback : done,
+                        encoding : encoding,
+                        hash     : hash,
+                        start    : start
+                    }
+                ];
+
+                readFile(fn, options, function (err, contents) {
+                    onFileLoaded(err, fn, hash, contents);
+                });
+            }
+        }
+        return self;
+    }
+
+    /**
      * Initalizes this Keepr instance.
      * @param {Object} options Options to init this instance with.
      * @return {Keepr} The current Keepr instance.
@@ -306,15 +488,19 @@ function Keepr (options) {
         options = typeof options === 'object' ? options : {};
 
         // Set initial cache limit...
-        self.setCacheLimit(options.size);
-        // Set relativeTo option
-        relativeTo = typeof options.relativeTo === 'string' ? self.relativeTo(options.relativeTo) : null;
-        // Set file watching options
-        watchForChanges = options.watch === undefined ? true : !!options.watch;
+        if(typeof options.size === 'number' || typeof options.size === 'string') setCacheLimit(options.size);
+
         // Set debug options
-        debugEnabled = typeof options.debug === 'boolean' ? options.debug : false;
+        if(options.debug === true) debugEnabled = true;
+
         // Set historyFactor option
-        self.setHistoryFactor(options.historyFactor);
+        if(lib.object.isNumeric(options.historyFactor)) self.setHistoryFactor(options.historyFactor);
+
+        // Set file watching options
+        if(options.watch !== undefined) {
+            watchForChanges = !!options.watch;
+            toggleWatchers(watchForChanges);
+        }
 
         debug('Max cache size is set to ' +  (cacheLimitSize * 1e-6)._.withPlaceholders() + 'mb.');
         debug('History factorization is ' +  historyFactor + '.');
@@ -373,117 +559,12 @@ function Keepr (options) {
     };
 
     /**
-     * Sets the maximum size the cache can grow to.
-     * @param {Number|String} bytesOrLimitString The number of bytes, or a string representing a storage size.
-     * Examples: 1000b, 1500kb, 1.5mb, 3gb...
-     * @return {Keepr} The current Keepr instance.
-     */
-    this.setCacheLimit = function setCacheLimit (bytesOrLimitString) {
-        // User passed a number, treat it as bytes..
-        if(lib.object.isNumeric(bytesOrLimitString)) {
-            cacheLimitSize = checkLimitSize(parseInt(bytesOrLimitString, 10));
-        }
-        // Got "limit string", parse the string...
-        else if(typeof bytesOrLimitString === 'string') {
-            var m = bytesOrLimitString.toLowerCase().match(/^ *(\d+(?:\.\d+)?) *(b|kb|mb|gb) *$/i);
-
-            if(m) {
-                cacheLimitSize = checkLimitSize(limitStringToBytes(m[1], m[2]));
-            }
-            else {
-                throw new Error('Invalid cache size "' + bytesOrLimitString + '"');
-            }
-        }
-        // Set default limit size...
-        else {
-            cacheLimitSize = v8.getHeapStatistics().total_available_size * DEFAULT_SIZE_PERCENTAGE_MULTIPLIER;
-        }
-
-        if(cacheLimitSize === 0) cacheLimitSize = Number.MAX_VALUE;
-        return self;
-    };
-
-    /**
      * Returns the utilization percentage of the cache.
      * @return {Number} The utiliation percentage of the cache.
      */
     this.utilized = function utilized () {
         return currentCacheSize / cacheLimitSize;
     };
-
-    /**
-     * Reads a file, if cached the cached contents will be returned, otherwise the file will be loaded and cached.
-     * @param {String} filename The path to the file to load.
-     * @param {Function=} done A callback for completion.
-     * @params {Object} options Options passed to fs.readFile
-     * @return {Keepr|Buffer|String} The current Keepr instance, or the file contents is "sync" is true.
-     */
-    function get (sync, filename, options, done) {
-        var start = process.hrtime(), contents;
-        done = arguments._.getCallback();
-
-        // Check filename argument...
-        if(typeof filename !== 'string')
-            return done.call(self, new Error(`Keepr#get expected argument #0 (get) to be a string, but got ${ typeof filename }`));
-
-        // Check the options argument...
-        if(typeof options === 'string') options = { encoding: options };
-        options = typeof options === 'object' ? options : {};
-        if(typeof options.encoding !== 'string') options.encoding = 'buffer';
-
-        // Format the filename...
-        var fn   = relativeTo ? path.resolve(path.join(relativeTo, filename)) : path.resolve(filename),
-            hash = crypto
-            .createHash('md5')
-            .update('keepr-' + fn)
-            .digest('hex');
-
-        // Attempt to find the file in the cache.
-        if(typeof cache[hash] === 'object') {
-            cache[hash].called++;
-            debug('Requested file "' + fn + '" present, returning cache with key "' + hash + '".');
-            contents = getBufferWithEncodingAndInvoke(cache[hash].data, options.encoding, start, done);
-            if(sync) return contents;
-        }
-        // File doesn't exist in cache, read the file and cache it.
-        else {
-            // The file is currently being loaded, push the callback to be executed when it's finished.
-            if(pendingLoad[hash]) {
-                debug('Requested file "' + fn + '" waiting for load... pushing callback to completion queue.');
-                pendingLoad[hash].push({ callback: done, encoding: options.encoding, start: start });
-                return self;
-            }
-            // Reading the file synchronously
-            else if(sync === true) {
-                debug('Requested file "' + fn + '" not present, reading and caching (synchronously).');
-                try {
-                    // Remove the encoding so we get a buffer back.
-                    delete options.encoding;
-
-                    contents = readFileSync(fn, options);
-                    onFileLoaded(null, fn, hash, contents);
-                    return options.encoding === 'buffer' ? contents : contents.toString(options.encoding);
-                }
-                catch (e) {
-                    onFileLoaded(e, fn, hash, null);
-                    return e;
-                }
-            }
-            // Reading the file
-            else {
-                debug('Requested file "' + fn + '" not present, reading and caching (asynchronously).');
-                pendingLoad[hash] = [ { callback: done, encoding: options.encoding, start: start } ];
-
-                // Remove the encoding so we get a buffer back.
-                delete options.encoding;
-
-                readFile(fn, options, function (err, contents) {
-                    onFileLoaded(err, fn, hash, contents);
-                });
-            }
-        }
-        return self;
-    }
 
     /**
      * Gets a file asynchronously and caches it.
@@ -513,39 +594,11 @@ function Keepr (options) {
      */
     this.isCached = function isCached (file) {
         if(typeof file === 'string') {
-            // If hash has been passed in, check for hash match.
-            if(cache[file]) return true;
-            // Hash didn't exist or wasn't passed in, check filenames.
             return !cache._.every(function (c) {
                 if(c.source === file) return false;
             });
         }
         return false;
-    };
-
-    /**
-     * Gets/sets where this Keepr instance is relative to.
-     * @param {String} path The new path to set this Keepr instance relative to,
-     * @return {String} The prefix to where all the files will be relative to.
-     * @throws {Error}
-     */
-    this.relativeTo = function (path) {
-        if(path !== undefined) {
-            if(typeof path === 'string') {
-                try {
-                    var stat = fs.statSync(path.resolve(relativeTo._.tildeToHome()));
-                    if(!stat.isDirectory())
-                        throw new Error('Keepr#relativeTo: "relativeTo" path is invalid. Path "' + relativeTo + '" is not a directory!');
-                }
-                catch (e) {
-                    throw new Error('Keepr#relativeTo: "relativeTo" path is invalid: ' + e.message);
-                }
-            }
-            else if(!relativeTo) {
-                relativeTo = null;
-            }
-        }
-        return relativeTo || '';
     };
 
     /**
@@ -573,18 +626,24 @@ function Keepr (options) {
             cache._.every(function (c, k) {
                 if(c.filename === file) {
                     if(cache[k].watcher) cache[k].watcher.close();
+                    currentCacheSize -= cache[k].size;
+
                     cache[k] = undefined;
                     delete cache[k];
+
                     debug('Cache was purged for file ' + file + '...');
+
+                    // Break every loop
                     return false;
                 }
             });
         }
         // Purge all cache
         else {
-            debug('Cache was purged...');
             currentCacheSize = 0;
             cache._.every(function (c) { if(c.watcher) c.watcher.close(); });
+
+            debug('Cache was purged...');
             cache = {};
         }
         return self;
@@ -607,32 +666,13 @@ function Keepr (options) {
      * @param {Object} options Options to init this instance with.
      * @return {Keepr} The current Keepr instance.
      */
-    this.setOptions = function setOptions (options) {
-        options = typeof options === 'object' ? options : {};
+    this.setOptions = init;
 
-        // Set initial cache limit...
-        if(typeof options.size === 'number' || typeof options.size === 'string') self.setCacheLimit(options.size);
-        // Set relativeTo option
-        if(typeof options.relativeTo === 'string') self.relativeTo(options.relativeTo);
-        // Set file watching options
-        if(options.watch !== undefined) watchForChanges = !!options.watch;
-        // Set debug options
-        if(options.debug === true) debugEnabled = true;
-        // Set historyFactor option
-        if(lib.object.isNumeric(options.historyFactor)) self.setHistoryFactor(options.historyFactor);
-
-        debug('Max cache size is set to ' +  (cacheLimitSize * 1e-6)._.withPlaceholders() + 'mb.');
-        debug('History factorization is ' +  historyFactor + '.');
-        return self;
-    };
-
-    // Initialize!
-    init(options);
-
-    // Mute all properties
-    self._.each(function (m) {
+    self._.every(function (m) {
         Object.defineProperty(self, m, { configuable: false, writable: false });
     });
+
+    init(options);
 }
 
 // Export singleton...

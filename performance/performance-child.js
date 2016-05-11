@@ -1,39 +1,31 @@
 'use strict';
 process.on('uncaught exception', function (e) { throw e; });
 
-var path  = require('path'),
-    fs    = require('fs'),
-    lib   = require('proto-lib').get('_'),
+var path      = require('path'),
+    fs        = require('fs'),
+    lib       = require('proto-lib').get('_'),
+    args      = require('minimist')(process.argv.slice(2), { boolean: 'buffercopy' }),
+    runs      = [1, 5, 100, 1000],
+    encodings = ['buffer', 'utf-8', 'hex', 'base64'],
 
-    // The files to iterate over...
-    files = {
-        '100b'  : path.join(__dirname, 'zeros', '100-bytes.txt'),
-        '1kb'   : path.join(__dirname, 'zeros', '1-kb.txt'),
-        '100kb' : path.join(__dirname, 'zeros', '100-kb.txt'),
-        '500kb' : path.join(__dirname, 'zeros', '500-kb.txt'),
-        '1mb'   : path.join(__dirname, 'zeros', '1-mb.txt'),
-        '50mb'  : path.join(__dirname, 'zeros', '50-mb.txt'),
-        '100mb' : path.join(__dirname, 'zeros', '100-mb.txt')
-    },
+    data, init;
 
-    // Stores results...
-    data = {
-        totalTime : 0,
-        heapUsed  : 0,
+// Check arguments...
+if(typeof args.file !== 'string') throw new Error(`Argument --file expected a string, but got: ${ typeof args.file }.`);
+if(typeof args.type !== 'string') throw new Error(`Argument --type expected a string, but got: ${ typeof args.type }.`);
 
-        p0: 0,
-        p1: 0,
-        p2: 0,
+// Stores results...
+data = {
+    file   : args.file,
+    passes : []
+};
 
-        '100b'  : { 1: 0, 50: 0, 500: 0 },
-        '1kb'   : { 1: 0, 50: 0, 500: 0 },
-        '100kb' : { 1: 0, 50: 0, 500: 0 },
-        '500kb' : { 1: 0, 50: 0, 500: 0 },
-        '1mb'   : { 1: 0, 50: 0, 500: 0 },
-        '50mb'  : { 1: 0, 50: 0, 500: 0 },
-        '100mb' : { 1: 0, 50: 0, 500: 0 }
-    };
-
+// Setup Keepr if type === 'keepr'
+if(args.type === 'keepr') {
+    var keepr = require('../');
+    keepr.wrapFS();
+    keepr.setOptions({ size: 0 });
+}
 
 /**
  * Converts a process.hrtime tuple to MS
@@ -44,36 +36,40 @@ function diffToMS (diff) {
     return (diff[0] * 1e9 + diff[1]) / 1e6;
 }
 
-function read (type, file, key, runSize, num) {
-    var start  = process.hrtime();
-    fs.readFileSync(file, 'utf-8');
-    var diff = process.hrtime(start);
-    data[key][runSize] += diffToMS(diff);
-    data['p' + num]    += diffToMS(diff);
-}
+var f;
+function read (encoding) {
+    try {
+        f = args.type !== 'keepr' ?
+            fs.readFileSync(path.resolve(args.file), encoding === 'buffer' ? undefined : encoding) :
+            fs.readFileSync(path.resolve(args.file), encoding);
 
-function doAllRuns (type) {
-    var runs  = [1, 50, 500];
-
-    for(var k = 0; k < runs.length; k++) {
-        for(var n in files) {
-            if(files.hasOwnProperty(n)) {
-                for(var i = 0; i < runs[k]; i++) {
-                    read(type, files[n], n, runs[k], k);
-                }
-            }
-        }
+        return f;
+    }
+    catch (e) {
+        throw new Error(`Test failed. Unable to read file for encoding ${ encoding }: ${ e.message }`);
     }
 }
 
-if(process.argv[2] === 'keepr') {
-    var keepr = require('../');
-    keepr.wrapFS();
-    keepr.setOptions({ size: 0 });
+init = process.hrtime();
+for(var i = 0; i < runs.length; i++) {
+    for(var n = 0; n < encodings.length; n++) {
+        var start = process.hrtime(), end;
+
+        console.log(`${ args.type._.ucFirst() }: Starting run with ${ runs[i] } read(s) and encoding '${ encodings[n] }'.`);
+        for(var k = 0; k < runs[i]; k++) read(encodings[n]);
+        end = diffToMS(process.hrtime(start));
+
+        data.passes.push({
+            reads    : runs[i],
+            time     : end,
+            heap     : process.memoryUsage().heapUsed,
+            encoding : encodings[n],
+            cached   : (args.type === 'keepr') ? keepr.isCached(path.resolve(args.file)) : false
+        });
+    }
 }
 
-var start = process.hrtime();
-doAllRuns(process.argv[2]);
-data.totalTime = diffToMS(process.hrtime(start));
-data.heapUsed  = process.memoryUsage().heapUsed;
+if(args.type === 'keepr') console.log(keepr.dump());
+
+data.cacheEncoding = args.encoding;
 process.send(data);

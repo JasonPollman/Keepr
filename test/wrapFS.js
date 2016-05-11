@@ -61,7 +61,7 @@
 
                 var dump = keepr.dump();
                 expect(dump).to.be.an('object');
-                expect(dump._.size()).to.equal(1);
+                expect(dump._.size()).to.equal(2);
 
                 expect(keepr.isCached(f)).to.equal(true);
                 fs.readFile(f, { encoding: 'utf-8' }, function (err, contents) {
@@ -76,7 +76,7 @@
 
                     var dump = keepr.dump();
                     expect(dump).to.be.an('object');
-                    expect(dump._.size()).to.equal(1);
+                    expect(dump._.size()).to.equal(2);
                     done();
                 });
             });

@@ -27,14 +27,13 @@
             expect(keepr.currentByteSize).to.be.a('function');
             expect(keepr.currentSize).to.be.a('function');
             expect(keepr.getMaxCacheSize).to.be.a('function');
-            expect(keepr.setCacheLimit).to.be.a('function');
             expect(keepr.utilized).to.be.a('function');
-            expect(keepr.relativeTo).to.be.a('function');
             expect(keepr.purge).to.be.a('function');
             expect(keepr.dump).to.be.a('function');
             expect(keepr.wrapFS).to.be.a('function');
             expect(keepr.unwrapFS).to.be.a('function');
             expect(keepr.sizeOf).to.be.a('function');
+            expect(keepr.setOptions).to.be.a('function');
 
             var dump = keepr.dump();
             expect(dump).to.be.an('object');
@@ -42,6 +41,7 @@
         });
 
         it('It should read files asyncronously', function (done) {
+            keepr.purge();
             var f = path.join(__dirname, '..', 'package.json');
             expect(keepr.isCached(f)).to.equal(false);
 
@@ -60,7 +60,7 @@
 
                 var dump = keepr.dump();
                 expect(dump).to.be.an('object');
-                expect(dump._.size()).to.equal(1);
+                expect(dump._.size()).to.equal(2);
                 done();
             });
         });
@@ -71,7 +71,7 @@
 
             var dump = keepr.dump();
             expect(dump).to.be.an('object');
-            expect(dump._.size()).to.equal(1);
+            expect(dump._.size()).to.equal(2);
 
             keepr.get(f, function (err, contents) {
                 expect(keepr.isCached(f)).to.equal(true);
@@ -81,7 +81,7 @@
 
                 var dump = keepr.dump();
                 expect(dump).to.be.an('object');
-                expect(dump._.size()).to.equal(2);
+                expect(dump._.size()).to.equal(3);
 
                 done();
             });
@@ -98,31 +98,29 @@
             expect(dump).to.be.an('object');
             expect(dump._.size()).to.equal(0);
 
-            keepr.get(f, { encoding: 'json' }, function (err, contents, time) {
-                expect(keepr.isCached(f)).to.equal(true);
-                expect(time).to.be.an('array');
-
+            keepr.get(f, { encoding: 'base64' }, function (err, contents, res) {
                 expect(err).to.equal(null);
-                expect(contents).to.be.an('object');
-                expect(contents.name).to.equal('keepr');
+                expect(keepr.isCached(f)).to.equal(true);
+                expect(res).to.be.an('object');
+
+                expect(contents).to.be.a('string');
 
                 var dump = keepr.dump();
                 expect(dump).to.be.an('object');
-                expect(dump._.size()).to.equal(1);
+                expect(dump._.size()).to.equal(2);
 
-                keepr.get(f, 'json', function (err, contents, cachedTime) {
-                    expect(cachedTime).to.be.an('array');
+                keepr.get(f, 'base64', function (err, contents, cachedRes) {
+                    expect(cachedRes).to.be.an('object');
                     expect(keepr.isCached(f)).to.equal(true);
 
-                    expect(cachedTime[0] * 1e9 + cachedTime[1]).to.be.lessThan(time[0] * 1e9 + time[1]);
+                    expect(cachedRes.time[0] * 1e9 + cachedRes.time[1]).to.be.lessThan(res.time[0] * 1e9 + res.time[1]);
 
                     expect(err).to.equal(null);
-                    expect(contents).to.be.an('object');
-                    expect(contents.name).to.equal('keepr');
+                    expect(contents).to.be.a('string');
 
                     var dump = keepr.dump();
                     expect(dump).to.be.an('object');
-                    expect(dump._.size()).to.equal(1);
+                    expect(dump._.size()).to.equal(2);
                     done();
                 });
             });
@@ -163,7 +161,7 @@
 
                         var dump = keepr.dump();
                         expect(dump).to.be.an('object');
-                        expect(dump._.size()).to.equal(1);
+                        expect(dump._.size()).to.equal(2);
 
                         keepr.get(f, { encoding: 'hex' }, function (err, contents) {
                             expect(keepr.isCached(f)).to.equal(true);
@@ -173,7 +171,7 @@
 
                             var dump = keepr.dump();
                             expect(dump).to.be.an('object');
-                            expect(dump._.size()).to.equal(1);
+                            expect(dump._.size()).to.equal(3);
 
                             f = path.join(__dirname, '..', 'ReadMe.md');
                             expect(keepr.isCached(f)).to.equal(false);
@@ -186,7 +184,7 @@
 
                                 var dump = keepr.dump();
                                 expect(dump).to.be.an('object');
-                                expect(dump._.size()).to.equal(2);
+                                expect(dump._.size()).to.equal(5);
                                 done();
                             });
                         });
