@@ -5,7 +5,7 @@ var path      = require('path'),
     fs        = require('fs'),
     lib       = require('proto-lib').get('_'),
     args      = require('minimist')(process.argv.slice(2), { boolean: 'buffercopy' }),
-    runs      = [1, 5, 100, 1000],
+    runs      = [1, 5, 100, 1000, 10000],
     encodings = ['buffer', 'utf-8', 'hex', 'base64'],
 
     data, init;
@@ -38,12 +38,11 @@ function diffToMS (diff) {
 
 var f;
 function read (encoding) {
+    var start;
     try {
-        f = args.type !== 'keepr' ?
-            fs.readFileSync(path.resolve(args.file), encoding === 'buffer' ? undefined : encoding) :
-            fs.readFileSync(path.resolve(args.file), encoding);
-
-        return f;
+        start = process.hrtime();
+        f = fs.readFileSync(path.resolve(args.file), encoding === 'buffer' ? undefined : encoding);
+        return diffToMS(process.hrtime(start));
     }
     catch (e) {
         throw new Error(`Test failed. Unable to read file for encoding ${ encoding }: ${ e.message }`);
@@ -53,15 +52,14 @@ function read (encoding) {
 init = process.hrtime();
 for(var i = 0; i < runs.length; i++) {
     for(var n = 0; n < encodings.length; n++) {
-        var start = process.hrtime(), end;
+        var time = 0;
 
         console.log(`${ args.type._.ucFirst() }: Starting run with ${ runs[i] } read(s) and encoding '${ encodings[n] }'.`);
-        for(var k = 0; k < runs[i]; k++) read(encodings[n]);
-        end = diffToMS(process.hrtime(start));
+        for(var k = 0; k < runs[i]; k++) time += read(encodings[n]);
 
         data.passes.push({
             reads    : runs[i],
-            time     : end,
+            time     : time,
             heap     : process.memoryUsage().heapUsed,
             encoding : encodings[n],
             cached   : (args.type === 'keepr') ? keepr.isCached(path.resolve(args.file)) : false

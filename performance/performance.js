@@ -6,7 +6,7 @@ var fork      = require('child_process').fork,
     path      = require('path'),
     fs        = require('fs'),
     args      = require('minimist')(process.argv.slice(2)),
-    childPath = path.join(__dirname, 'performance-child.js'),
+    childPath = path.join(__dirname, 'performance-child-async.js'),
     readMe    = path.join(__dirname, '..', 'ReadMe.md'),
     lib       = require('proto-lib').get('_'),
     os        = require('os'),
@@ -59,7 +59,10 @@ function formatTime (t) {
  * @return {undefined}
  */
 function buildResults (results) {
-    var s = `#### ${ (filesize / 1e6).toFixed(1) }MB File
+    var divisor = filesize >= 1e6 ? 1e6 : 1e3,
+        type    = divisor === 1e6 ? 'MB' : 'KB';
+
+    var s = `#### ${ (filesize / divisor).toFixed(1) }${ type } File
 ${ new Date().toLocaleDateString() } • ${ os.type()._.ucFirst() } • ${ (os.totalmem() / 1e9).toFixed(2) }GB Memory • ${ os.cpus()._.size() } CPUS
 
 | Pass | Reads | Encoding | FS Time | Keepr Time | % Faster | X Faster | FS Heap | Keepr Heap |
@@ -79,12 +82,12 @@ ${ new Date().toLocaleDateString() } • ${ os.type()._.ucFirst() } • ${ (os.t
             pctFaster = ((1 - (data.keeprTime / data.fsTime)) * 100).toFixed(2);
         }
         if(Math.abs(pctFaster) > 50) pctFaster = '**' + pctFaster + '%**'; else pctFaster += '%';
-        timesFaster = (timesFaster > 1.5) ? '**' + timesFaster._.withPlaceholders().toFixed(2) + '**' : timesFaster._.withPlaceholders().toFixed(2);
+        timesFaster = (timesFaster > 1.5) ? '**' + parseFloat(timesFaster.toFixed(2))._.withPlaceholders() + '**' : parseFloat(timesFaster.toFixed(2))._.withPlaceholders();
         if(neg) pctFaster = '-' + pctFaster;
 
 
-        s += `
-| ${ ++n } | ${ data.reads } | ${ data.format === 'utf-8' ? data.format.toUpperCase() : data.format._.ucFirst() } | ${ formatTime(data.fsTime) } | ${ formatTime(data.keeprTime) } | ${ pctFaster } | ${ timesFaster } | ${ (data.fsHeap / 1e6).toFixed(0) }MB | ${ (data.keeprHeap / 1e6).toFixed(0) }MB |`;
+        s += `| ${ ++n } | ${ data.reads } | ${ data.format === 'utf-8' ? data.format.toUpperCase() : data.format._.ucFirst() } | ` +
+        `${ formatTime(data.fsTime) } | ${ formatTime(data.keeprTime) } | ${ pctFaster } | ${ timesFaster } | ${ (data.fsHeap / 1e6).toFixed(0) }MB | ${ (data.keeprHeap / 1e6).toFixed(0) }MB |`;
     });
 
     writeResults(s);

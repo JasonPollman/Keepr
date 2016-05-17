@@ -3,20 +3,31 @@
 
     var expect = require('chai').expect,
         path   = require('path'),
+        fs     = require('fs'),
         keepr;
 
-    describe('Basic Usage', function () {
+    describe('Keepr (Basic Usage)', function () {
+        var utf, hex, base64, binary;
 
-        before(function () {
+        before(function (done) {
             keepr = require('../');
             keepr.purge();
+
+            fs.readFile('./package.json', function (err, contents) {
+                utf    = contents.toString('utf-8');
+                hex    = contents.toString('hex');
+                base64 = contents.toString('base64');
+                binary = contents.toString('binary');
+
+                done();
+            });
         });
 
         after(function () {
             keepr.purge();
         });
 
-        it('It should return an object with the correct API when required', function () {
+        it('Should return an object with the correct API when required', function () {
             expect(keepr).to.be.an('object');
             expect(keepr).to.be.an.instanceof(keepr.Keepr);
             expect(keepr.get).to.be.a('function');
@@ -34,13 +45,14 @@
             expect(keepr.unwrapFS).to.be.a('function');
             expect(keepr.sizeOf).to.be.a('function');
             expect(keepr.setOptions).to.be.a('function');
+            expect(keepr.getOptions).to.be.a('function');
 
             var dump = keepr.dump();
             expect(dump).to.be.an('object');
             expect(dump._.size()).to.equal(0);
         });
 
-        it('It should read files asyncronously', function (done) {
+        it('Should read files asyncronously', function (done) {
             keepr.purge();
             var f = path.join(__dirname, '..', 'package.json');
             expect(keepr.isCached(f)).to.equal(false);
@@ -53,6 +65,7 @@
                 expect(keepr.isCached(f)).to.equal(true);
                 expect(err).to.equal(null);
                 expect(contents).to.be.a('string');
+                expect(contents).to.equal(utf);
 
                 var package_ = JSON.parse(contents);
                 expect(package_).to.be.an('object');
@@ -65,13 +78,39 @@
             });
         });
 
-        it('It should read files asyncronously and return a buffer by default', function (done) {
+        it('Should read files syncronously', function (done) {
+            keepr.purge();
+            var f = path.join(__dirname, '..', 'package.json');
+            expect(keepr.isCached(f)).to.equal(false);
+
+            var dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(0);
+
+            var contents = keepr.getSync(f, { encoding: 'utf-8' });
+            expect(keepr.isCached(f)).to.equal(true);
+            expect(contents).to.be.a('string');
+            expect(contents).to.equal(utf);
+
+            var package_ = JSON.parse(contents);
+            expect(package_).to.be.an('object');
+            expect(package_.name).to.equal('keepr');
+
+            dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(2);
+            done();
+        });
+
+        it('Should read files asyncronously and return a buffer by default', function (done) {
+            keepr.purge();
+
             var f = path.join(__dirname, '..', 'ReadMe.md');
             expect(keepr.isCached(f)).to.equal(false);
 
             var dump = keepr.dump();
             expect(dump).to.be.an('object');
-            expect(dump._.size()).to.equal(2);
+            expect(dump._.size()).to.equal(0);
 
             keepr.get(f, function (err, contents) {
                 expect(keepr.isCached(f)).to.equal(true);
@@ -81,15 +120,59 @@
 
                 var dump = keepr.dump();
                 expect(dump).to.be.an('object');
-                expect(dump._.size()).to.equal(3);
+                expect(dump._.size()).to.equal(1);
 
-                done();
+                keepr.get(f, function (err, contentsNext) {
+                    expect(keepr.isCached(f)).to.equal(true);
+
+                    expect(err).to.equal(null);
+                    expect(contentsNext).to.be.an.instanceof(Buffer);
+                    expect(contents).to.eql(contentsNext);
+                    expect(contents.toString('utf-8')).to.equal(contentsNext.toString('utf-8'));
+
+                    var dump = keepr.dump();
+                    expect(dump).to.be.an('object');
+                    expect(dump._.size()).to.equal(1);
+
+                    done();
+                });
             });
         });
 
-        it('It should read files asyncronously and return an object when JSON is read and the "json" encoding is provided', function (done) {
-            var f = path.join(__dirname, '..', 'package.json');
+        it('Should read files syncronously and return a buffer by default', function (done) {
+            keepr.purge();
+
+            var f = path.join(__dirname, '..', 'ReadMe.md');
+            expect(keepr.isCached(f)).to.equal(false);
+
+            var dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(0);
+
+            var contents = keepr.getSync(f);
             expect(keepr.isCached(f)).to.equal(true);
+            expect(contents).to.be.an.instanceof(Buffer);
+
+            dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(1);
+
+            var contentsNext = keepr.getSync(f);
+            expect(keepr.isCached(f)).to.equal(true);
+
+            expect(contentsNext).to.be.an.instanceof(Buffer);
+            expect(contents).to.eql(contentsNext);
+            expect(contents.toString('utf-8')).to.equal(contentsNext.toString('utf-8'));
+
+            dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(1);
+
+            done();
+        });
+
+        it('Should read files asyncronously and return a string when "utf-8" is the specified encoding', function (done) {
+            var f = path.join(__dirname, '..', 'package.json');
 
             keepr.purge();
             expect(keepr.isCached(f)).to.equal(false);
@@ -98,25 +181,23 @@
             expect(dump).to.be.an('object');
             expect(dump._.size()).to.equal(0);
 
-            keepr.get(f, { encoding: 'base64' }, function (err, contents, res) {
+            keepr.get(f, { encoding: 'utf-8' }, function (err, contents) {
                 expect(err).to.equal(null);
                 expect(keepr.isCached(f)).to.equal(true);
-                expect(res).to.be.an('object');
-
                 expect(contents).to.be.a('string');
+                expect(contents).to.equal(utf);
 
                 var dump = keepr.dump();
                 expect(dump).to.be.an('object');
                 expect(dump._.size()).to.equal(2);
 
-                keepr.get(f, 'base64', function (err, contents, cachedRes) {
-                    expect(cachedRes).to.be.an('object');
+                keepr.get(f, 'utf-8', function (err, contentsNext) {
                     expect(keepr.isCached(f)).to.equal(true);
 
-                    expect(cachedRes.time[0] * 1e9 + cachedRes.time[1]).to.be.lessThan(res.time[0] * 1e9 + res.time[1]);
-
                     expect(err).to.equal(null);
-                    expect(contents).to.be.a('string');
+                    expect(contentsNext).to.be.a('string');
+                    expect(contents).to.equal(contentsNext);
+                    expect(contentsNext).to.equal(utf);
 
                     var dump = keepr.dump();
                     expect(dump).to.be.an('object');
@@ -126,7 +207,147 @@
             });
         });
 
-        it('It should return a buffer when "buffer" is specified in the encoding', function (done) {
+        it('Should read files syncronously and return a string when "utf-8" is the specified encoding', function (done) {
+            var f = path.join(__dirname, '..', 'package.json');
+
+            keepr.purge();
+            expect(keepr.isCached(f)).to.equal(false);
+
+            var dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(0);
+
+            var contents = keepr.getSync(f, { encoding: 'utf-8' });
+            expect(keepr.isCached(f)).to.equal(true);
+            expect(contents).to.be.a('string');
+            expect(contents).to.equal(utf);
+
+            dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(2);
+
+            var contentsNext = keepr.getSync(f, 'utf-8');
+            expect(keepr.isCached(f)).to.equal(true);
+
+            expect(contentsNext).to.be.a('string');
+            expect(contents).to.equal(contentsNext);
+            expect(contentsNext).to.equal(utf);
+
+            dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(2);
+            done();
+        });
+
+        it('Should read files asyncronously and return a string when "hex" is the specified encoding', function (done) {
+            var f = path.join(__dirname, '..', 'package.json');
+
+            keepr.purge();
+            expect(keepr.isCached(f)).to.equal(false);
+
+            var dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(0);
+
+            keepr.get(f, { encoding: 'hex' }, function (err, contents) {
+                expect(err).to.equal(null);
+                expect(keepr.isCached(f)).to.equal(true);
+                expect(contents).to.be.a('string');
+                expect(contents).to.equal(hex);
+
+                var dump = keepr.dump();
+                expect(dump).to.be.an('object');
+                expect(dump._.size()).to.equal(2);
+
+                keepr.get(f, 'hex', function (err, contentsNext) {
+                    expect(keepr.isCached(f)).to.equal(true);
+
+                    expect(err).to.equal(null);
+                    expect(contentsNext).to.be.a('string');
+                    expect(contents).to.equal(contentsNext);
+                    expect(contentsNext).to.equal(hex);
+
+                    var dump = keepr.dump();
+                    expect(dump).to.be.an('object');
+                    expect(dump._.size()).to.equal(2);
+                    done();
+                });
+            });
+        });
+
+        it('Should read files asyncronously and return a string when "base64" is the specified encoding', function (done) {
+            var f = path.join(__dirname, '..', 'package.json');
+
+            keepr.purge();
+            expect(keepr.isCached(f)).to.equal(false);
+
+            var dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(0);
+
+            keepr.get(f, { encoding: 'base64' }, function (err, contents) {
+                expect(err).to.equal(null);
+                expect(keepr.isCached(f)).to.equal(true);
+                expect(contents).to.be.a('string');
+                expect(contents).to.equal(base64);
+
+                var dump = keepr.dump();
+                expect(dump).to.be.an('object');
+                expect(dump._.size()).to.equal(2);
+
+                keepr.get(f, 'base64', function (err, contentsNext) {
+                    expect(keepr.isCached(f)).to.equal(true);
+
+                    expect(err).to.equal(null);
+                    expect(contentsNext).to.be.a('string');
+                    expect(contents).to.equal(contentsNext);
+                    expect(contentsNext).to.equal(base64);
+
+                    var dump = keepr.dump();
+                    expect(dump).to.be.an('object');
+                    expect(dump._.size()).to.equal(2);
+                    done();
+                });
+            });
+        });
+
+        it('Should read files asyncronously and return a string when "binary" is the specified encoding', function (done) {
+            var f = path.join(__dirname, '..', 'package.json');
+
+            keepr.purge();
+            expect(keepr.isCached(f)).to.equal(false);
+
+            var dump = keepr.dump();
+            expect(dump).to.be.an('object');
+            expect(dump._.size()).to.equal(0);
+
+            keepr.get(f, { encoding: 'binary' }, function (err, contents) {
+                expect(err).to.equal(null);
+                expect(keepr.isCached(f)).to.equal(true);
+                expect(contents).to.be.a('string');
+                expect(contents).to.equal(binary);
+
+                var dump = keepr.dump();
+                expect(dump).to.be.an('object');
+                expect(dump._.size()).to.equal(2);
+
+                keepr.get(f, 'binary', function (err, contentsNext) {
+                    expect(keepr.isCached(f)).to.equal(true);
+
+                    expect(err).to.equal(null);
+                    expect(contentsNext).to.be.a('string');
+                    expect(contents).to.equal(contentsNext);
+                    expect(contentsNext).to.equal(binary);
+
+                    var dump = keepr.dump();
+                    expect(dump).to.be.an('object');
+                    expect(dump._.size()).to.equal(2);
+                    done();
+                });
+            });
+        });
+
+        it('Should return a buffer when "buffer" is specified in the encoding', function (done) {
             keepr.purge();
             var f = path.join(__dirname, '..', 'package.json');
             expect(keepr.isCached(f)).to.equal(false);
@@ -154,6 +375,7 @@
                         expect(keepr.isCached(f)).to.equal(true);
                         expect(err).to.equal(null);
                         expect(contents).to.be.a('string');
+                        expect(contents).to.equal(utf);
 
                         var package_ = JSON.parse(contents);
                         expect(package_).to.be.an('object');

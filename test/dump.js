@@ -5,7 +5,7 @@
         path   = require('path'),
         keepr;
 
-    describe('Keepr Dump', function () {
+    describe('Keepr#dump', function () {
 
         before(function () {
             keepr = new (require('../')).Keepr();
@@ -16,7 +16,7 @@
             keepr.purge();
         });
 
-        it('It should dump a copy of the cache contents', function (done) {
+        it('Should dump a copy of the cache\'s contents', function (done) {
             var f  = path.join(__dirname, '..', 'index.js'),
                 f2 = path.join(__dirname, '..', 'ReadMe.md'),
                 f3 = path.join(__dirname, '..', 'package.json'),

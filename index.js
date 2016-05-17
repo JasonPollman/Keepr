@@ -28,17 +28,23 @@ lib.extend(String, 'tildeToHome', function (s) {
 });
 
 /**
+ * Normalizes and makes a path absolute.
+ * @param {String} p The path to format.
+ * @return {String} The formatted path.
+ */
+function formatPath (p) {
+    if(typeof p !== 'string') return p;
+    return path.resolve(path.normalize(p));
+}
+
+/**
  * Cache's files up to a specified byte size and keeps the most frequently files used in memory.
  * @constructor
  * @param {Object} options Various options to set class defaults.
- * @param {Number=} options.size The maximum bytesize the cache is allowed to grow to.
- * @param {Boolean=} options.debug If true, debug messages will be printed.
- * @param {Number=} options.historyFactor A number between 1.5 and 8 that will affect how old cache is deleted. For more
- * info @see Keepr~historyFactor.
  */
 function Keepr (options) {
     // Prevent bind calls
-    if(!(this instanceof Keepr)) return new Keepr();
+    if(!(this instanceof Keepr)) return new Keepr(options);
 
     /**
      * Stores file buffer contents
@@ -73,7 +79,7 @@ function Keepr (options) {
 
     /**
      * Stores the pending file loads and their callbacks. So if the same files are called async, the second
-     * doesn't try to load the file again.
+     * doesn't try to load the file again, but appends it's callback to a list of callbacks to invoke.
      * @type {Object<Array>}
      */
     pendingLoad = {},
@@ -103,9 +109,10 @@ function Keepr (options) {
     }
 
     /**
-     * Invoked by fs.readFile when a file load is complete. All callbacks subscribed to the file will then
-     * be invoked in the order they were requested.
-     * @param {Error|null} err An error that occured loading the file, if one existed.
+     * Invoked by fs.readFile when a file load is complete.<br>
+     * All callbacks subscribed to the file will then be invoked in the order they were requested.
+     * @param {Error|null} err An error that occured while loading the file, if one existed.
+     * @param {String} fn The filename of the file that's just finished loading.
      * @param {String} hash The hash of the filename (cache item) to invoke the pending callbacks with.
      * @param {Buffer} buffer The buffer results from fs.readFile.
      * @return {undefined}
@@ -128,14 +135,13 @@ function Keepr (options) {
             debug('Invoking ' + loadQueue.length + ' callback(s) for file "' + path.basename(fn) + '" with hash "' + hash + '".');
 
             loadQueue._.every(function (request) {
-                var wasConverted, encoded;
+                var encoded;
 
                 if(err) {
                     request.callback.call(self, err, null, null);
                 }
                 else {
                     if(!cache[request.hash]) {
-                        wasConverted = true;
                         encoded = buffer.toString(request.encoding);
                         addToCache(fn, request.hash, request.encoding, encoded);
                     }
@@ -148,18 +154,17 @@ function Keepr (options) {
                         encoded.copy(copy);
                         encoded = copy;
                     }
-                    return request.callback.call(self, null, encoded, { time: process.hrtime(request.start), cached: false, converted: wasConverted });
+                    return request.callback.call(self, null, encoded);
                 }
             });
         }
-
         return err || buffer;
     }
 
     /**
-     * Adds a cache item to the cace.
-     * @param {String} filename The filename associated with this buffer contents.
-     * @param {String} hash The md5 string used to identify the cache.
+     * Adds a cache item to the cache.
+     * @param {String} filename The filename associated with this data.
+     * @param {String} hash The string used to identify the cache.
      * @param {Buffer} data The data contents to store in the cache.
      * @return {undefined}
      */
@@ -176,19 +181,19 @@ function Keepr (options) {
             hash     : hash,
             encoding : encoding,
             watcher  : !watchForChanges ? null : fs.watch(filename, { persistent: false, }, function () {
-                debug('Detected changes in file "' + filename + '" killing its cache.');
+                debug('Detected changes in file "' + filename + '" killing its cache (' + cache[hash].encoding + ').');
                 cache[hash].watcher.close();
 
                 cache[hash] = undefined;
                 delete cache[hash];
             })
         };
-
         debug('Cache re-sized to: ' + ds + ' + ' + sz + ' = ' + currentCacheSize + ' (' + (self.utilized() * 100).toFixed(4) + '% utiliation).');
     }
 
     /**
-     * Removes the oldest / least frequenly used cache item.
+     * Removes the oldest / least frequenly used cache item(s) until there's enough room in the cache to store "data".
+     * @param {Buffer|String} data The data to make room for.
      * @return {undefined}
      */
     function makeRoomForBuffer (data) {
@@ -225,9 +230,9 @@ function Keepr (options) {
         if(sizeOfData > (cacheLimitSize / historyFactor * 2) || !hasEnoughHeap) {
             debug(
                 'File "' + filename + '" is too large to be cached. Skipping...' + os.EOL +
-                '    Cache     : ' + currentCacheSize                    + os.EOL +
-                '    Limit     : ' + cacheLimitSize                      + os.EOL +
-                '    Available : ' + (cacheLimitSize - currentCacheSize) + os.EOL +
+                '    Cache     : ' + currentCacheSize                            + os.EOL +
+                '    Limit     : ' + cacheLimitSize                              + os.EOL +
+                '    Available : ' + (cacheLimitSize - currentCacheSize)         + os.EOL +
                 '    File      : ' + sizeOfData
             );
             return false;
@@ -339,7 +344,7 @@ function Keepr (options) {
             cacheLimitSize = v8.getHeapStatistics().total_available_size * DEFAULT_SIZE_PERCENTAGE_MULTIPLIER;
         }
 
-        if(cacheLimitSize === 0) cacheLimitSize = Number.MAX_VALUE;
+        if(cacheLimitSize === 0) cacheLimitSize = Number.MAX_VALUE; // Infinitely sized cached
         return self;
     }
 
@@ -351,8 +356,7 @@ function Keepr (options) {
      * @return {Keepr|Buffer|String} The current Keepr instance, or the file contents is "sync" is true.
      */
     function get (sync, filename, options, done) {
-        var start = process.hrtime(),
-            contents,
+        var contents,
             encoding,
             bufferHash,
             hash,
@@ -373,7 +377,6 @@ function Keepr (options) {
         encoding = options.encoding;
         if(typeof encoding !== 'string') encoding = 'buffer';
         if(encoding === 'utf8') encoding = 'utf-8';
-        encoding = encoding.toLowerCase();
 
         switch(encoding) {
             case 'ascii' :
@@ -395,10 +398,7 @@ function Keepr (options) {
 
         }
 
-        // Remove the encoding so we always a buffer back to cache.
-        delete options.encoding;
-
-        fn         = path.resolve(filename);
+        fn         = formatPath(filename);
         hash       = fn + ':' + encoding;
         bufferHash = cache[fn + ':buffer'];
 
@@ -410,7 +410,7 @@ function Keepr (options) {
                 return cache[hash].data;
             }
             else {
-                done.call(self, null, cache[hash].data, { time: process.hrtime(start), cached: true, converted: false });
+                done.call(self, null, cache[hash].data);
             }
         }
         else if(cache[bufferHash]) {
@@ -422,11 +422,14 @@ function Keepr (options) {
                 return converted;
             }
             else {
-                done.call(self, null, converted, { time: process.hrtime(start), cached: true, converted: true });
+                done.call(self, null, converted);
             }
         }
         // File doesn't exist in cache, read the file and cache it.
         else {
+
+            // Remove the encoding so we always a buffer back to cache.
+            delete options.encoding;
 
             // The file is currently being loaded, push the callback to be executed when it's finished.
             if(pendingLoad[fn] && sync === false) {
@@ -436,16 +439,14 @@ function Keepr (options) {
                     filename : filename,
                     callback : done,
                     encoding : encoding,
-                    hash     : hash,
-                    start    : start
+                    hash     : hash
                 });
                 return self;
             }
             // Read the file synchronously
             else if(sync === true) {
                 debug('Requested file "' + fn + '" not present, reading and caching (synchronously).');
-
-                contents = onFileLoaded(null, fn, hash, readFileSync(fn, options));
+                contents = onFileLoaded(null, fn, hash, readFileSync(filename, options));
 
                 if(encoding !== 'buffer') {
                     var encoded = contents.toString(encoding);
@@ -466,12 +467,11 @@ function Keepr (options) {
                         filename : filename,
                         callback : done,
                         encoding : encoding,
-                        hash     : hash,
-                        start    : start
+                        hash     : hash
                     }
                 ];
 
-                readFile(fn, options, function (err, contents) {
+                readFile(filename, options, function (err, contents) {
                     onFileLoaded(err, fn, hash, contents);
                 });
             }
@@ -485,14 +485,14 @@ function Keepr (options) {
      * @return {Keepr} The current Keepr instance.
      */
     function init (options) {
-        options = typeof options === 'object' ? options : {};
+        options = options && typeof options === 'object' ? options : {};
 
         // Set initial cache limit...
         if(typeof options.size === 'number' || typeof options.size === 'string') setCacheLimit(options.size);
 
         // Set debug options
-        if(options.debug === true) debugEnabled = true;
-
+        if(options.debug === true) debugEnabled = true; else debugEnabled = false;
+        
         // Set historyFactor option
         if(lib.object.isNumeric(options.historyFactor)) self.setHistoryFactor(options.historyFactor);
 
@@ -594,6 +594,7 @@ function Keepr (options) {
      */
     this.isCached = function isCached (file) {
         if(typeof file === 'string') {
+            file = formatPath(file);
             return !cache._.every(function (c) {
                 if(c.source === file) return false;
             });
@@ -615,36 +616,36 @@ function Keepr (options) {
 
     /**
      * Purges the file cache.
-     * @param {String=} file If present, purge will only delete the cache for this file. If omitted all cache will be cleared.
+     * @param {...String=} files If present, purge will delete only the cache for the given string arguments.
+     * If omitted all cache will be cleared.
      * @return {Keepr} The current Keepr instance.
      */
-    this.purge = function purge (file) {
-        // Purge cache for a specific file
-        if(typeof file === 'string') {
-            file = path.resolve(file);
+    this.purge = function purge () {
+        if(arguments._.size() > 0) {
+            arguments._.every(function (file) {
+                if(typeof file === 'string') {
+                    file = formatPath(file);
 
-            cache._.every(function (c, k) {
-                if(c.filename === file) {
-                    if(cache[k].watcher) cache[k].watcher.close();
-                    currentCacheSize -= cache[k].size;
+                    cache._.every(function (c, k) {
+                        if(c.source === file) {
+                            if(cache[k].watcher) cache[k].watcher.close();
+                            currentCacheSize -= cache[k].size;
 
-                    cache[k] = undefined;
-                    delete cache[k];
+                            cache[k] = undefined;
+                            delete cache[k];
 
-                    debug('Cache was purged for file ' + file + '...');
-
-                    // Break every loop
-                    return false;
+                            debug('Cache was purged for file ' + file + '...');
+                        }
+                    });
                 }
             });
         }
-        // Purge all cache
         else {
             currentCacheSize = 0;
             cache._.every(function (c) { if(c.watcher) c.watcher.close(); });
-
-            debug('Cache was purged...');
             cache = {};
+
+            debug('All cache was purged...');
         }
         return self;
     };
@@ -667,6 +668,19 @@ function Keepr (options) {
      * @return {Keepr} The current Keepr instance.
      */
     this.setOptions = init;
+
+    /**
+     * Returns the current Keepr options.
+     * @return {Object<String|Boolean|Number>}
+     */
+    this.getOptions = function getOptions () {
+        return {
+            debug         : debugEnabled,
+            size          : cacheLimitSize,
+            watch         : watchForChanges,
+            historyFactor : historyFactor
+        };
+    };
 
     self._.every(function (m) {
         Object.defineProperty(self, m, { configuable: false, writable: false });
