@@ -17,6 +17,7 @@
     - Keepr prevents heap allocation errors by capping memory contents to a preset size.
     - Keepr won't cache anything if it will overflow the available heap space.
     - If a file is modified or deleted it is uncached automatically.
+- **99% Test Coverage**
 
 ## Install
 ---

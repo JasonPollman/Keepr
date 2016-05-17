@@ -151,6 +151,22 @@
             });
         });
 
+        it('Should handle non-string arugments passed to Keepr#purge', function (done) {
+            var keepr = new (require('../')).Keepr();
+            keepr.setOptions({ size: 0 });
+            var f = path.join(__dirname, '..', 'package.json');
+
+            expect(keepr.isCached(f)).to.equal(false);
+            keepr.read(f, 'utf-8', function (err, contents) {
+                expect(err).to.equal(null);
+                expect(contents).to.be.a('string');
+                expect(keepr.purge.bind(keepr, {}, 'string')).to.not.throw(Error);
+                expect(keepr.purge.bind(keepr, [], 'string')).to.not.throw(Error);
+                expect(keepr.purge.bind(keepr, f, function () {})).to.not.throw(Error);
+                done();
+            });
+        });
+
         it('Should *not* cache items that are greater than 25% of (heap / historyFactor)', function (done) {
             var keepr = new (require('../')).Keepr();
             keepr.setOptions({ size: 500 });

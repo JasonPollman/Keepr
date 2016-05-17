@@ -317,7 +317,7 @@ function Keepr (options) {
                     c.watcher = null;
                 }
             }
-            else if(!c.watcher) {
+            else {
                 c.watcher = fs.watch(c.source, function () {
                     debug('Detected changes in file "' + c.source + '" killing its cache.');
                     c.watcher.close();
@@ -340,7 +340,7 @@ function Keepr (options) {
             cacheLimitSize = checkLimitSize(parseInt(bytesOrLimitString, 10));
         }
         // Got "limit string", parse the string...
-        else if(typeof bytesOrLimitString === 'string') {
+        else {
             var m = bytesOrLimitString.toLowerCase().match(/^ *(\d+(?:\.\d+)?) *(b|kb|mb|gb) *$/i);
 
             if(m) {

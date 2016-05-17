@@ -12,6 +12,7 @@
 
         before(function (done) {
             keepr = require('../');
+            keepr.unwrapFS();
             keepr.purge();
 
             fs.readFile(path.join(__dirname, '..', 'package.json'), function (err, contents) {
