@@ -35,7 +35,8 @@
         it('Should keep the correct cache size limit, part 1', function (done) {
             this.timeout(10000);
             this.slow(2000);
-
+            keepr.purge();
+            
             var read = 0;
             for(var i = 0; i < 100; i++) {
                 keepr.get(path.join(zeros, '500-kb.txt'), function (err, contents) {
@@ -48,14 +49,14 @@
                             keepr.get(path.join(zeros, '500-kb.txt'), 'utf-8', function (err, contents) {
                                 expect(err).to.equal(null);
                                 expect(contents).to.match(/^0+$/);
-                                expect(keepr.currentSize()).to.equal(1501200);
+                                expect(keepr.currentSize()).to.equal(1000800);
 
                                 if(++read === 200) {
                                     for(var i = 0; i < 100; i++) {
                                         keepr.get(path.join(zeros, '1-kb.txt'), 'utf-8', function (err, contents) {
                                             expect(err).to.equal(null);
                                             expect(contents).to.match(/^0+$/);
-                                            expect(keepr.currentSize()).to.equal(1503200);
+                                            expect(keepr.currentSize()).to.equal(1002800);
                                             if(++read === 300) done();
                                         });
                                     }

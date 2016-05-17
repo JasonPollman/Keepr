@@ -6,7 +6,7 @@
     "license": "MIT",
     "main": "index.js",
     "scripts": {
-        "test": "mocha"
+        "test": "istanbul cover _mocha"
     },
     "keywords": [
         "cache",
@@ -14,12 +14,14 @@
         "fs",
         "keepr",
         "memory",
-        "performance"
+        "performance",
+        "file caching"
     ],
-    "devDependenices": {
+    "devDependencies": {
         "chai": "^3.5.0",
         "mocha": "^2.4.5",
-        "minimist": "^1.2.0"
+        "minimist": "^1.2.0",
+        "istanbul": "^0.4.3"
     },
     "dependencies": {
         "proto-lib": "^0.2.7"

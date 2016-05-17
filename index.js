@@ -33,8 +33,7 @@ lib.extend(String, 'tildeToHome', function (s) {
  * @return {String} The formatted path.
  */
 function formatPath (p) {
-    if(typeof p !== 'string') return p;
-    return path.resolve(path.normalize(p));
+    return path.resolve(path.normalize(p._.tildeToHome()));
 }
 
 /**
@@ -43,9 +42,6 @@ function formatPath (p) {
  * @param {Object} options Various options to set class defaults.
  */
 function Keepr (options) {
-    // Prevent bind calls
-    if(!(this instanceof Keepr)) return new Keepr(options);
-
     /**
      * Stores file buffer contents
      * @type {Object<Buffer>}
@@ -60,8 +56,8 @@ function Keepr (options) {
 
     /**
      * The maximum size the cache is allowed to store in *bytes*.
-     * Default is 1 GB.
-     * @type {}
+     * Default is [available heap] * 0.75.
+     * @type {Number}
      */
     cacheLimitSize = v8.getHeapStatistics().total_available_size * DEFAULT_SIZE_PERCENTAGE_MULTIPLIER,
 
@@ -109,6 +105,18 @@ function Keepr (options) {
     }
 
     /**
+     * Sets the history factor.
+     * @param {Number} factor A number between 1.5 and 8 (inclusive).
+     * @return {Keepr} The current Keepr instance.
+     */
+    function setHistoryFactor (factor) {
+        historyFactor = lib.object.isNumeric(factor) ? lib.object.getNumeric(factor) : 2;
+        if(historyFactor < 1.5) historyFactor = 1.5;
+        if(historyFactor > 8  ) historyFactor = 8;
+        return self;
+    }
+
+    /**
      * Invoked by fs.readFile when a file load is complete.<br>
      * All callbacks subscribed to the file will then be invoked in the order they were requested.
      * @param {Error|null} err An error that occured while loading the file, if one existed.
@@ -142,8 +150,15 @@ function Keepr (options) {
                 }
                 else {
                     if(!cache[request.hash]) {
-                        encoded = buffer.toString(request.encoding);
-                        addToCache(fn, request.hash, request.encoding, encoded);
+                        if(request.encoding !== 'buffer') {
+                            encoded = buffer.toString(request.encoding);
+                            addToCache(fn, request.hash, request.encoding, encoded);
+                        }
+                        // Don't need to copy or add to cache here, as this case indicates that
+                        // the file was too big to be cached. So just return the buffer as-is.
+                        else {
+                            encoded = buffer;
+                        }
                     }
                     else {
                         encoded = cache[request.hash].data;
@@ -269,15 +284,13 @@ function Keepr (options) {
      * @return {Number} The limit string value in bytes.
      */
     function limitStringToBytes (n, type) {
-        // Force default for negative numbers...
-        if(n < 0) type = null;
+        n = parseInt(n, 10);
 
         switch(type) {
-            case 'b'  : return parseInt(n, 10);
-            case 'kb' : return parseInt(n * 1e3, 10);
-            case 'mb' : return parseInt(n * 1e6, 10);
-            case 'gb' : return parseInt(n * 1e9, 10);
-            default   : return v8.getHeapStatistics().total_available_size * DEFAULT_SIZE_PERCENTAGE_MULTIPLIER;
+            case 'b'  : return n;
+            case 'kb' : return n * 1e3;
+            case 'mb' : return n * 1e6;
+            case 'gb' : return n * 1e9;
         }
     }
 
@@ -304,15 +317,13 @@ function Keepr (options) {
                     c.watcher = null;
                 }
             }
-            else {
-                if(!c.watcher) {
-                    c.watcher = fs.watch(c.source, function () {
-                        debug('Detected changes in file "' + c.source + '" killing its cache.');
-                        c.watcher.close();
-                        cache[key] = undefined;
-                        delete cache[key];
-                    });
-                }
+            else if(!c.watcher) {
+                c.watcher = fs.watch(c.source, function () {
+                    debug('Detected changes in file "' + c.source + '" killing its cache.');
+                    c.watcher.close();
+                    cache[key] = undefined;
+                    delete cache[key];
+                });
             }
         });
     }
@@ -336,15 +347,12 @@ function Keepr (options) {
                 cacheLimitSize = checkLimitSize(limitStringToBytes(m[1], m[2]));
             }
             else {
-                throw new Error('Invalid cache size "' + bytesOrLimitString + '"');
+                // We'll throw here, because it's likely a user mistake.
+                throw new Error('Invalid cache size string "' + bytesOrLimitString + '"');
             }
         }
-        // Set default limit size...
-        else {
-            cacheLimitSize = v8.getHeapStatistics().total_available_size * DEFAULT_SIZE_PERCENTAGE_MULTIPLIER;
-        }
 
-        if(cacheLimitSize === 0) cacheLimitSize = Number.MAX_VALUE; // Infinitely sized cached
+        if(cacheLimitSize <= 0) cacheLimitSize = Number.MAX_VALUE; // Infinitely sized cached
         return self;
     }
 
@@ -366,7 +374,7 @@ function Keepr (options) {
         done = arguments._.getCallback();
 
         if(typeof filename !== 'string') {
-            e = new Error('Keepr~get expected argument #0 (get) to be a string, but got ' + typeof filename + '.');
+            e = new TypeError('Keepr~get expected argument #0 (get) to be a string, but got ' + typeof filename + '.');
             if(sync) throw e;
             return done.call(self, e, null, null);
         }
@@ -400,7 +408,7 @@ function Keepr (options) {
 
         fn         = formatPath(filename);
         hash       = fn + ':' + encoding;
-        bufferHash = cache[fn + ':buffer'];
+        bufferHash = fn + ':buffer';
 
         if(cache[hash]) {
             debug('Requested file "' + fn + '" present, returning cache for encoding "' + encoding + '".');
@@ -416,7 +424,7 @@ function Keepr (options) {
         else if(cache[bufferHash]) {
             debug('Requested file "' + fn + '" present, converting cache to encoding "' + encoding + '" and returning.');
             var converted = cache[bufferHash].data.toString(encoding);
-            addToCache(fn, bufferHash, encoding, converted);
+            addToCache(fn, hash, encoding, converted);
 
             if(sync) {
                 return converted;
@@ -446,7 +454,7 @@ function Keepr (options) {
             // Read the file synchronously
             else if(sync === true) {
                 debug('Requested file "' + fn + '" not present, reading and caching (synchronously).');
-                contents = onFileLoaded(null, fn, hash, readFileSync(filename, options));
+                contents = onFileLoaded(null, fn, hash, readFileSync(fn, options));
 
                 if(encoding !== 'buffer') {
                     var encoded = contents.toString(encoding);
@@ -471,7 +479,7 @@ function Keepr (options) {
                     }
                 ];
 
-                readFile(filename, options, function (err, contents) {
+                readFile(fn, options, function (err, contents) {
                     onFileLoaded(err, fn, hash, contents);
                 });
             }
@@ -492,9 +500,9 @@ function Keepr (options) {
 
         // Set debug options
         if(options.debug === true) debugEnabled = true; else debugEnabled = false;
-        
+
         // Set historyFactor option
-        if(lib.object.isNumeric(options.historyFactor)) self.setHistoryFactor(options.historyFactor);
+        if(lib.object.isNumeric(options.historyFactor)) setHistoryFactor(options.historyFactor);
 
         // Set file watching options
         if(options.watch !== undefined) {
@@ -506,18 +514,6 @@ function Keepr (options) {
         debug('History factorization is ' +  historyFactor + '.');
         return self;
     }
-
-    /**
-     * Sets the history factor.
-     * @param {Number} factor A number between 1.5 and 8 (inclusive).
-     * @return {Keepr} The current Keepr instance.
-     */
-    this.setHistoryFactor = function (factor) {
-        historyFactor = lib.object.isNumeric(factor) ? lib.object.getNumeric(factor) : 2;
-        if(historyFactor < 1.5) historyFactor = 1.5;
-        if(historyFactor > 8  ) historyFactor = 8;
-        return self;
-    };
 
     /**
      * Returns the byte size of the given object.
@@ -548,14 +544,6 @@ function Keepr (options) {
      */
     this.getMaxCacheSize = function getMaxCacheSize () {
         return Math.floor(v8.getHeapStatistics().total_available_size);
-    };
-
-    /**
-     * Returns the maxCacheLimit
-     * @return {Number}
-     */
-    this.cacheLimit = function getCacheLimitSize () {
-        return cacheLimitSize;
     };
 
     /**

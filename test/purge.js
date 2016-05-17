@@ -73,6 +73,9 @@
         });
 
         it('Should purge all cache', function (done) {
+            this.timeout(5000);
+            this.slow(500);
+
             var f  = path.join(__dirname, '..', 'index.js'),
                 f2 = path.join(__dirname, '..', 'ReadMe.md'),
                 f3 = path.join(__dirname, '..', 'package.json'),
