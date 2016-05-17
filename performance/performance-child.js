@@ -5,7 +5,7 @@ var path      = require('path'),
     fs        = require('fs'),
     lib       = require('proto-lib').get('_'),
     args      = require('minimist')(process.argv.slice(2), { boolean: 'buffercopy' }),
-    runs      = [1, 5, 100, 1000, 10000],
+    runs      = [1, 2, 5, 20],
     encodings = ['buffer', 'utf-8', 'hex', 'base64'],
 
     data, init;

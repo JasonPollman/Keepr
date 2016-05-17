@@ -6,7 +6,7 @@ var fork      = require('child_process').fork,
     path      = require('path'),
     fs        = require('fs'),
     args      = require('minimist')(process.argv.slice(2)),
-    childPath = path.join(__dirname, 'performance-child-async.js'),
+    childPath = path.join(__dirname, 'performance-child.js'),
     readMe    = path.join(__dirname, '..', 'ReadMe.md'),
     lib       = require('proto-lib').get('_'),
     os        = require('os'),
@@ -86,8 +86,7 @@ ${ new Date().toLocaleDateString() } • ${ os.type()._.ucFirst() } • ${ (os.t
         if(neg) pctFaster = '-' + pctFaster;
 
 
-        s += `| ${ ++n } | ${ data.reads } | ${ data.format === 'utf-8' ? data.format.toUpperCase() : data.format._.ucFirst() } | ` +
-        `${ formatTime(data.fsTime) } | ${ formatTime(data.keeprTime) } | ${ pctFaster } | ${ timesFaster } | ${ (data.fsHeap / 1e6).toFixed(0) }MB | ${ (data.keeprHeap / 1e6).toFixed(0) }MB |`;
+        s += `${ os.EOL }| ${ ++n } | ${ data.reads } | ${ data.format === 'utf-8' ? data.format.toUpperCase() : data.format._.ucFirst() } | ${ formatTime(data.fsTime) } | ${ formatTime(data.keeprTime) } | ${ pctFaster } | ${ timesFaster } | ${ (data.fsHeap / 1e6).toFixed(0) }MB | ${ (data.keeprHeap / 1e6).toFixed(0) }MB |`;
     });
 
     writeResults(s);
