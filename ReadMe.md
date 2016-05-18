@@ -34,7 +34,6 @@ var keepr = require('keepr');
 keepr.get('./some/file.js', function (err, contents) { ... });
 
 // All subsequent calls will return the cached contents.
-// This is, unless the file is modified...
 keepr.get('./some/file.js', function (err, contents) { ... });
 
 // Or wrap the fs.module...
@@ -165,10 +164,18 @@ fs.readFile('./my/file.js', function (err, contents) { ... });
 keepr.unwrapFS();
 ```
 
+**If you need to use the vanilla FS methods for a "don't cache" situation after wrapping the fs module, you can use [Keepr#noCache](#keeprnocache) or [Keepr#noCacheSync](#keeprnocachesync)**    
+
 *Note, Keepr#wrapFS and Keepr#unwrapFS are available only to the singleton instance returned when required. Newly created instances will **not** have these methods.*
 
 
 ## Other Methods
+
+#### Keepr#noCache()
+Always returns the vanilla version of *fs.readFile*.
+
+#### Keepr#noCacheSync()
+Always returns the vanilla version of *fs.readFileSync*.
 
 #### Keepr#dump() → *{Object}*
 Exports *a skeleton copy* of the the cache content as an object (without the data)
