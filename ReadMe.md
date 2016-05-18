@@ -10,11 +10,10 @@
     - Keeps frequently used content readily available.
     - You can set the maximum cache size.
 - **Keeps the newest, most frequently used files first.**
-    - The most frequently used content stays in memory for subsequent calls.
     - Uses a LFU/Oldest First composite algorithm.
     - Retrieve cached contents in any supported encoding or get a safe copy of the buffer contents.
 - **Safely store file contents in memory**
-    - Keepr helps prevent heap allocation errors by capping store file contents to a preset size.
+    - Keepr helps prevent heap allocation errors by capping stored file contents to a preset size.
     - If a file is modified or deleted it is uncached automagically.
 - **99% Test Coverage**
 
