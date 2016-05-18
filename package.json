@@ -19,11 +19,12 @@
     ],
     "devDependencies": {
         "chai": "^3.5.0",
-        "mocha": "^2.4.5",
+        "fs-extra": "^0.30.0",
+        "istanbul": "^0.4.3",
         "minimist": "^1.2.0",
-        "istanbul": "^0.4.3"
+        "mocha": "^2.4.5"
     },
     "dependencies": {
-        "proto-lib": "^0.2.7"
+        "proto-lib": "^0.2.9"
     }
 }

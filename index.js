@@ -177,6 +177,18 @@ function Keepr (options) {
     }
 
     /**
+     * Removes a line of cache.
+     * @param {String} hash The cache's key
+     * @return {undefined}
+     */
+    function removeCacheLine (hash) {
+        currentCacheSize -= keepr.sizeOf(cache[hash].data);
+        if(cache[hash].watcher) cache[hash].watcher.close();
+        cache[hash] = undefined;
+        delete cache[hash];
+    }
+
+    /**
      * Adds a cache item to the cache.
      * @param {String} filename The filename associated with this data.
      * @param {String} hash The string used to identify the cache.
@@ -197,10 +209,7 @@ function Keepr (options) {
             encoding : encoding,
             watcher  : !watchForChanges ? null : fs.watch(filename, { persistent: false, }, function () {
                 debug('Detected changes in file "' + filename + '" killing its cache (' + cache[hash].encoding + ').');
-                cache[hash].watcher.close();
-
-                cache[hash] = undefined;
-                delete cache[hash];
+                removeCacheLine(hash);
             })
         };
         debug('Cache re-sized to: ' + ds + ' + ' + sz + ' = ' + currentCacheSize + ' (' + (self.utilized() * 100).toFixed(4) + '% utiliation).');
@@ -218,12 +227,7 @@ function Keepr (options) {
             lfu = cache._.first(Math.ceil(cache._.size() / historyFactor))
                        ._.keyOfMin(function (line) { return line.called; });
 
-            size = cache[lfu].size;
-            currentCacheSize -= size;
-
-            if(cache[lfu].watcher) cache[lfu].watcher.close();
-            cache[lfu] = undefined;
-            delete cache[lfu];
+            removeCacheLine(lfu);
             debug('Cache line with hash: "' + lfu + '" and size ' +  size + ' removed');
         }
     }
@@ -320,9 +324,7 @@ function Keepr (options) {
             else {
                 c.watcher = fs.watch(c.source, function () {
                     debug('Detected changes in file "' + c.source + '" killing its cache.');
-                    c.watcher.close();
-                    cache[key] = undefined;
-                    delete cache[key];
+                    removeCacheLine(key);
                 });
             }
         });
@@ -616,12 +618,7 @@ function Keepr (options) {
 
                     cache._.every(function (c, k) {
                         if(c.source === file) {
-                            if(cache[k].watcher) cache[k].watcher.close();
-                            currentCacheSize -= cache[k].size;
-
-                            cache[k] = undefined;
-                            delete cache[k];
-
+                            removeCacheLine(k);
                             debug('Cache was purged for file ' + file + '...');
                         }
                     });
@@ -651,6 +648,14 @@ function Keepr (options) {
     };
 
     /**
+     * Returns the number of line items in the cache.
+     * @return {Number}
+     */
+    this.count = function () {
+        return cache._.size();
+    };
+
+    /**
      * Sets options for this Keepr instance.
      * @param {Object} options Options to init this instance with.
      * @return {Keepr} The current Keepr instance.
@@ -669,6 +674,18 @@ function Keepr (options) {
             historyFactor : historyFactor
         };
     };
+
+    /**
+     * Exposes the vanilla fs.readFile function, so if the fs module is wrapped using Keepr#wrapFS it's still available.
+     * @type {Function}
+     */
+    this.noCache = readFile;
+
+    /**
+     * Exposes the vanilla fs.readFileSync function, so if the fs module is wrapped using Keepr#wrapFS it's still available.
+     * @type {Function}
+     */
+    this.noCacheSync = readFileSync;
 
     self._.every(function (m) {
         Object.defineProperty(self, m, { configuable: false, writable: false });
@@ -701,7 +718,7 @@ keepr.wrapFS = function bindFS () {
  * Unbinds the Keepr functions from the fs module.
  * @return {Keepr} The singleton keepr instance.
  */
-keepr.unwrapFS = function bindFS () {
+keepr.unwrapFS = function unbindFS () {
     if(bound) {
         bound = false;
         fs.readFile     = readFile;
@@ -709,6 +726,20 @@ keepr.unwrapFS = function bindFS () {
     }
     return keepr;
 };
+
+/**
+ * Adds Keepr#sizeOf to all strings via the Protolib library.
+ */
+lib.extend(String, 'sizeOf', function sizeOf (s) {
+    return keepr.sizeOf(s);
+});
+
+/**
+ * Adds Keepr#sizeOf to all Buffer objects via the Protolib library.
+ */
+lib.extend(Buffer, 'sizeOf', function sizeOf (s) {
+    return keepr.sizeOf(s);
+});
 
 // ...Expose a reference to the class.
 keepr.Keepr = Keepr;

@@ -50,6 +50,9 @@
             expect(keepr.sizeOf).to.be.a('function');
             expect(keepr.setOptions).to.be.a('function');
             expect(keepr.getOptions).to.be.a('function');
+            expect(keepr.noCache).to.be.a('function');
+            expect(keepr.noCacheSync).to.be.a('function');
+            expect(keepr.count).to.be.a('function');
 
             var dump = keepr.dump();
             expect(dump).to.be.an('object');
@@ -90,6 +93,7 @@
             var dump = keepr.dump();
             expect(dump).to.be.an('object');
             expect(dump._.size()).to.equal(0);
+            expect(keepr.count()).to.equal(0);
 
             keepr.get(f, { encoding: 'utf-8' }, function (err) {
                 expect(err).to.be.an.instanceof(Error);
@@ -101,6 +105,7 @@
                 dump = keepr.dump();
                 expect(dump).to.be.an('object');
                 expect(dump._.size()).to.equal(0);
+                expect(keepr.count()).to.equal(0);
 
                 done();
             });
@@ -149,6 +154,7 @@
             var dump = keepr.dump();
             expect(dump).to.be.an('object');
             expect(dump._.size()).to.equal(0);
+            expect(keepr.count()).to.equal(0);
 
             var contents = keepr.getSync(f, { encoding: 'utf-8' });
             expect(keepr.isCached(f)).to.equal(true);
@@ -162,6 +168,7 @@
             dump = keepr.dump();
             expect(dump).to.be.an('object');
             expect(dump._.size()).to.equal(2);
+            expect(keepr.count()).to.equal(2);
             done();
         });
 
@@ -174,6 +181,7 @@
             var dump = keepr.dump();
             expect(dump).to.be.an('object');
             expect(dump._.size()).to.equal(0);
+            expect(keepr.count()).to.equal(0);
 
             keepr.get(f, function (err, contents) {
                 expect(keepr.isCached(f)).to.equal(true);
@@ -184,6 +192,7 @@
                 var dump = keepr.dump();
                 expect(dump).to.be.an('object');
                 expect(dump._.size()).to.equal(1);
+                expect(keepr.count()).to.equal(1);
 
                 keepr.get(f, function (err, contentsNext) {
                     expect(keepr.isCached(f)).to.equal(true);
@@ -196,6 +205,7 @@
                     var dump = keepr.dump();
                     expect(dump).to.be.an('object');
                     expect(dump._.size()).to.equal(1);
+                    expect(keepr.count()).to.equal(1);
 
                     done();
                 });
