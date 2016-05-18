@@ -5,6 +5,11 @@
     "author": "Jason James Pollman <jasonjpollman@gmail.com>",
     "license": "ISC",
     "main": "index.js",
+    "bugs": "https://github.com/JasonPollman/Keepr/issues",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/JasonPollman/Keepr"
+    },
     "scripts": {
         "test": "istanbul cover _mocha"
     },
