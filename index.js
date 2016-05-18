@@ -314,7 +314,7 @@ function Keepr (options) {
      * @return {undefined}
      */
     function toggleWatchers () {
-        cache._.every(function (c, key, i, cache) {
+        cache._.every(function (c, key) {
             if(watchForChanges === false) {
                 if(c.watcher) {
                     c.watcher.close();
