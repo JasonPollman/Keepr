@@ -3,7 +3,7 @@
     "version": "0.0.0",
     "description": "The simple file caching module for Node.js. Caches files up to a given byte size, keeping the most frequently files used in memory and purging others.",
     "author": "Jason James Pollman <jasonjpollman@gmail.com>",
-    "license": "MIT",
+    "license": "ISC",
     "main": "index.js",
     "scripts": {
         "test": "istanbul cover _mocha"
