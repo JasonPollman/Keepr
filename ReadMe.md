@@ -14,9 +14,8 @@
     - Uses a LFU/Oldest First composite algorithm.
     - Retrieve cached contents in any supported encoding or get a safe copy of the buffer contents.
 - **Safely store file contents in memory**
-    - Keepr prevents heap allocation errors by capping memory contents to a preset size.
-    - Keepr won't cache anything if it will overflow the available heap space.
-    - If a file is modified or deleted it is uncached automatically.
+    - Keepr helps prevent heap allocation errors by capping store file contents to a preset size.
+    - If a file is modified or deleted it is uncached automagically.
 - **99% Test Coverage**
 
 ## Install
