@@ -290,7 +290,7 @@ function Keepr (options) {
     function limitStringToBytes (n, type) {
         n = parseInt(n, 10);
 
-        switch(type) {
+        switch(type.toLowerCase()) {
             case 'b'  : return n;
             case 'kb' : return n * 1e3;
             case 'mb' : return n * 1e6;

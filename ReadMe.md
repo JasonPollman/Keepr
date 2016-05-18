@@ -115,8 +115,6 @@ The following strings are *valid* "size strings" where *xxx* is a number:
 ```js
 var keepr = require('keepr');
 
-// Default settings shown...
-
 keepr.setOptions({ size: '5000b' });
 keepr.setOptions({ size: '5000kb' });
 keepr.setOptions({ size: '200mb' });
