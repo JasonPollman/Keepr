@@ -1,6 +1,6 @@
 {
     "name": "keepr",
-    "version": "0.0.0",
+    "version": "0.0.1",
     "description": "The simple file caching module for Node.js. Caches files up to a given byte size, keeping the most frequently files used in memory and purging others.",
     "author": "Jason James Pollman <jasonjpollman@gmail.com>",
     "license": "ISC",
