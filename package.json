@@ -1,6 +1,6 @@
 {
     "name": "keepr",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "The simple file caching module for Node.js.",
     "author": "Jason James Pollman <jasonjpollman@gmail.com>",
     "license": "ISC",
